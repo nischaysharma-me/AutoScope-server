@@ -45,6 +45,32 @@ class ScannerController {
       next(error);
     }
   }
+
+  async seedScanners(req, res, next) {
+    try {
+      const defaultScanners = [
+        { deviceId: 'SCN-101', serialNumber: 'SN-AUTOSCOPE-001', name: 'Laboratory Pathology Scanner A', currentVersion: 'v1.0.0', status: 'ACTIVE' },
+        { deviceId: 'SCN-102', serialNumber: 'SN-AUTOSCOPE-002', name: 'Histology High-Res Scanner B', currentVersion: 'v1.0.0', status: 'ACTIVE' },
+        { deviceId: 'SCN-103', serialNumber: 'SN-AUTOSCOPE-003', name: 'Cytology Automated Scanner C', currentVersion: 'v1.2.0', status: 'ACTIVE' },
+        { deviceId: 'SCN-104', serialNumber: 'SN-AUTOSCOPE-004', name: 'Dermatology High-Magnification D', currentVersion: 'v2.0.1', status: 'ACTIVE' },
+        { deviceId: 'SCN-105', serialNumber: 'SN-AUTOSCOPE-005', name: 'Hematology Smear Scanner E', currentVersion: 'v1.1.0', status: 'UPDATING' },
+      ];
+
+      const results = [];
+      for (const item of defaultScanners) {
+        const scanner = await ScannerModel.findOneAndUpdate(
+          { deviceId: item.deviceId },
+          item,
+          { upsert: true, new: true, setDefaultsOnInsert: true }
+        );
+        results.push(scanner);
+      }
+
+      return successResponse(res, results, 'Scanners seeded successfully in MongoDB', 200);
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = new ScannerController();

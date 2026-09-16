@@ -3,6 +3,7 @@ const router = express.Router();
 const scannerController = require('../controllers/scanner.controller');
 
 router.get('/', scannerController.getAllScanners);
+router.post('/seed', scannerController.seedScanners);
 router.post('/', scannerController.registerScanner);
 router.get('/:id', scannerController.getScannerById);
 
