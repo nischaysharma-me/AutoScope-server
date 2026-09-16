@@ -1,47 +1,54 @@
-const { v4: uuidv4 } = require('uuid');
+const mongoose = require('mongoose');
 
-// In-memory data store for CHUNK entity
-const chunks = new Map();
-
-class ImageChunkModel {
-  static create({ imageUploadId, chunkIndex, chunkSize, checksum = null, storageKey = null }) {
-    const id = uuidv4();
-    const chunk = {
-      id,
-      imageUploadId,
-      chunkIndex: Number(chunkIndex),
-      chunkSize: Number(chunkSize) || 0,
-      checksum,
-      storageKey,
-      status: 'UPLOADED', // 'PENDING' | 'UPLOADED'
-      uploadedAt: new Date().toISOString(),
-    };
-    chunks.set(id, chunk);
-    return chunk;
+const imageChunkSchema = new mongoose.Schema(
+  {
+    imageUploadId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'ImageUpload',
+      required: true,
+      index: true,
+    },
+    chunkIndex: {
+      type: Number,
+      required: true,
+    },
+    chunkSize: {
+      type: Number,
+      required: true,
+    },
+    checksum: {
+      type: String,
+      default: null,
+    },
+    storageKey: {
+      type: String,
+      default: null,
+    },
+    status: {
+      type: String,
+      enum: ['PENDING', 'UPLOADED'],
+      default: 'UPLOADED',
+    },
+    uploadedAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  {
+    timestamps: true,
+    toJSON: {
+      transform: (doc, ret) => {
+        ret.id = ret._id ? ret._id.toString() : ret.id;
+        delete ret.__v;
+        return ret;
+      },
+    },
   }
+);
 
-  static findById(id) {
-    return chunks.get(id) || null;
-  }
+// Compound index to ensure uniqueness per upload and chunk index
+imageChunkSchema.index({ imageUploadId: 1, chunkIndex: 1 }, { unique: true });
 
-  static findByUploadId(imageUploadId) {
-    return Array.from(chunks.values())
-      .filter(c => c.imageUploadId === imageUploadId)
-      .sort((a, b) => a.chunkIndex - b.chunkIndex);
-  }
-
-  static findByUploadIdAndIndex(imageUploadId, chunkIndex) {
-    return Array.from(chunks.values())
-      .find(c => c.imageUploadId === imageUploadId && c.chunkIndex === Number(chunkIndex)) || null;
-  }
-
-  static deleteByUploadId(imageUploadId) {
-    for (const [id, chunk] of chunks.entries()) {
-      if (chunk.imageUploadId === imageUploadId) {
-        chunks.delete(id);
-      }
-    }
-  }
-}
+const ImageChunkModel = mongoose.model('ImageChunk', imageChunkSchema);
 
 module.exports = ImageChunkModel;

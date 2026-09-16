@@ -5,7 +5,7 @@ const { ImageUploadModel, ImageChunkModel, ImageArtifactModel, ScannerModel } = 
 const { removeDir } = require('../utilites/file.util');
 
 class ChunkUploadService {
-  initSession({ originalFilename, totalFileSize, totalChunks, scannerId = null }) {
+  async initSession({ originalFilename, totalFileSize, totalChunks, scannerId = null }) {
     if (!originalFilename) {
       throw new Error('originalFilename is required');
     }
@@ -15,39 +15,40 @@ class ChunkUploadService {
 
     // Optional scanner device validation
     if (scannerId) {
-      const scanner = ScannerModel.findByDeviceId(scannerId) || ScannerModel.findById(scannerId);
+      const scanner = await ScannerModel.findOne({ deviceId: scannerId });
       if (!scanner) {
-        throw new Error(`Scanner with deviceId/id '${scannerId}' not found in registry`);
+        throw new Error(`Scanner with deviceId '${scannerId}' not found in registry`);
       }
     }
 
-    const session = ImageUploadModel.create({
+    const session = await ImageUploadModel.create({
       originalFilename,
-      totalFileSize,
-      totalChunks,
+      totalFileSize: Number(totalFileSize) || 0,
+      totalChunks: Number(totalChunks),
       scannerId,
     });
 
     // Ensure chunks directory exists
-    storageProvider.getChunkDirPath(session.id);
+    storageProvider.getChunkDirPath(session._id.toString());
 
-    return ImageUploadModel.formatUpload(session);
+    return this.formatUploadWithRelations(session);
   }
 
-  getSessionStatus(uploadId) {
-    const session = ImageUploadModel.findById(uploadId);
+  async getSessionStatus(uploadId) {
+    const session = await ImageUploadModel.findById(uploadId);
     if (!session) {
       throw new Error(`Upload session '${uploadId}' not found`);
     }
-    return ImageUploadModel.formatUpload(session);
+    return this.formatUploadWithRelations(session);
   }
 
-  getAllSessions() {
-    return ImageUploadModel.findAll();
+  async getAllSessions() {
+    const uploads = await ImageUploadModel.find().sort({ createdAt: -1 });
+    return Promise.all(uploads.map(u => this.formatUploadWithRelations(u)));
   }
 
   async saveChunk(uploadId, chunkIndex, file) {
-    const session = ImageUploadModel.findById(uploadId);
+    const session = await ImageUploadModel.findById(uploadId);
     if (!session) {
       throw new Error(`Upload session '${uploadId}' not found`);
     }
@@ -69,29 +70,45 @@ class ChunkUploadService {
       throw new Error('No chunk file data provided');
     }
 
-    // Record chunk in model
-    ImageUploadModel.updateChunk(uploadId, index, {
-      size: file.size,
-      path: targetPath,
-    });
+    // Persist chunk to MongoDB via ImageChunkModel (upsert to handle retries cleanly)
+    await ImageChunkModel.findOneAndUpdate(
+      { imageUploadId: session._id, chunkIndex: index },
+      {
+        imageUploadId: session._id,
+        chunkIndex: index,
+        chunkSize: file.size,
+        storageKey: targetPath,
+        status: 'UPLOADED',
+        uploadedAt: new Date(),
+      },
+      { upsert: true, new: true }
+    );
 
-    const uploadedChunks = ImageChunkModel.findByUploadId(uploadId);
-    const isComplete = uploadedChunks.length === session.totalChunks;
+    // Update session resumption index
+    session.lastUploadedChunkIndex = Math.max(session.lastUploadedChunkIndex, index);
+    await session.save();
+
+    // Check count of uploaded chunks in MongoDB
+    const uploadedChunksCount = await ImageChunkModel.countDocuments({ imageUploadId: session._id });
+    const isComplete = uploadedChunksCount === session.totalChunks;
     let completedFile = null;
 
     if (isComplete) {
       completedFile = await this.mergeChunks(uploadId);
     }
 
+    const latestSession = await ImageUploadModel.findById(uploadId);
+    const formattedSession = await this.formatUploadWithRelations(latestSession);
+
     return {
-      session: ImageUploadModel.formatUpload(session),
+      session: formattedSession,
       isComplete,
       completedFile,
     };
   }
 
   async mergeChunks(uploadId) {
-    const session = ImageUploadModel.findById(uploadId);
+    const session = await ImageUploadModel.findById(uploadId);
     if (!session) {
       throw new Error(`Upload session '${uploadId}' not found`);
     }
@@ -121,50 +138,57 @@ class ChunkUploadService {
         });
       };
 
-      writeStream.on('finish', () => {
-        // Clean up chunks directory
-        const chunkDir = storageProvider.getChunkDirPath(uploadId);
-        removeDir(chunkDir);
+      writeStream.on('finish', async () => {
+        try {
+          // Clean up chunks directory
+          const chunkDir = storageProvider.getChunkDirPath(uploadId);
+          removeDir(chunkDir);
 
-        const stats = fs.statSync(targetFilePath);
+          const stats = fs.statSync(targetFilePath);
 
-        // Mark upload as completed in model
-        ImageUploadModel.complete(uploadId, targetFilePath);
+          // Update ImageUpload in MongoDB
+          session.uploadStatus = 'COMPLETED';
+          session.processingStatus = 'COMPLETED';
+          session.completedFilePath = targetFilePath;
+          await session.save();
 
-        // Generate Artifacts: Full Processed Image & Thumbnail metadata
-        const ext = path.extname(session.originalFilename).toLowerCase();
-        const mimeType = ext === '.png' ? 'image/png' : 'image/jpeg';
+          // Generate and persist Artifacts in MongoDB (PROCESSED_IMAGE & THUMBNAIL)
+          const ext = path.extname(session.originalFilename).toLowerCase();
+          const mimeType = ext === '.png' ? 'image/png' : (ext === '.webp' ? 'image/webp' : 'image/jpeg');
 
-        const processedArtifact = ImageArtifactModel.create({
-          imageUploadId: uploadId,
-          artifactType: 'PROCESSED_IMAGE',
-          storageKey: targetFilePath,
-          s3Bucket: 'autoscope-images',
-          width: 3840, // High-res scan representation
-          height: 2160,
-          fileSize: stats.size,
-          format: mimeType,
-          processingTimeMs: 142.5,
-        });
+          const processedArtifact = await ImageArtifactModel.create({
+            imageUploadId: session._id,
+            artifactType: 'PROCESSED_IMAGE',
+            storageKey: targetFilePath,
+            s3Bucket: 'autoscope-images',
+            width: 3840,
+            height: 2160,
+            fileSize: stats.size,
+            format: mimeType,
+            processingTimeMs: 142.5,
+          });
 
-        const thumbnailArtifact = ImageArtifactModel.create({
-          imageUploadId: uploadId,
-          artifactType: 'THUMBNAIL',
-          storageKey: `${targetFilePath}_thumb`,
-          s3Bucket: 'autoscope-images',
-          width: 320,
-          height: 180,
-          fileSize: Math.round(stats.size * 0.1),
-          format: 'image/jpeg',
-          processingTimeMs: 45.2,
-        });
+          const thumbnailArtifact = await ImageArtifactModel.create({
+            imageUploadId: session._id,
+            artifactType: 'THUMBNAIL',
+            storageKey: `${targetFilePath}_thumb`,
+            s3Bucket: 'autoscope-images',
+            width: 320,
+            height: 180,
+            fileSize: Math.round(stats.size * 0.1),
+            format: 'image/jpeg',
+            processingTimeMs: 45.2,
+          });
 
-        resolve({
-          filePath: targetFilePath,
-          fileName: path.basename(targetFilePath),
-          fileSize: stats.size,
-          artifacts: [processedArtifact, thumbnailArtifact],
-        });
+          resolve({
+            filePath: targetFilePath,
+            fileName: path.basename(targetFilePath),
+            fileSize: stats.size,
+            artifacts: [processedArtifact, thumbnailArtifact],
+          });
+        } catch (err) {
+          reject(err);
+        }
       });
 
       writeStream.on('error', (err) => {
@@ -174,6 +198,29 @@ class ChunkUploadService {
       // Start sequential stream pipe from chunk 0
       appendNextChunk(0);
     });
+  }
+
+  async formatUploadWithRelations(uploadDoc) {
+    if (!uploadDoc) return null;
+    const chunks = await ImageChunkModel.find({ imageUploadId: uploadDoc._id }).sort({ chunkIndex: 1 });
+    const artifacts = await ImageArtifactModel.find({ imageUploadId: uploadDoc._id });
+
+    return {
+      id: uploadDoc._id.toString(),
+      scannerId: uploadDoc.scannerId,
+      originalFilename: uploadDoc.originalFilename,
+      totalFileSize: uploadDoc.totalFileSize,
+      totalChunks: uploadDoc.totalChunks,
+      lastUploadedChunkIndex: uploadDoc.lastUploadedChunkIndex,
+      uploadedChunksCount: chunks.length,
+      uploadedChunkIndices: chunks.map(c => c.chunkIndex),
+      uploadStatus: uploadDoc.uploadStatus,
+      processingStatus: uploadDoc.processingStatus,
+      completedFilePath: uploadDoc.completedFilePath,
+      artifacts: artifacts.map(a => a.toJSON()),
+      createdAt: uploadDoc.createdAt,
+      updatedAt: uploadDoc.updatedAt,
+    };
   }
 }
 

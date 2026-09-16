@@ -1,72 +1,75 @@
-const { v4: uuidv4 } = require('uuid');
+const mongoose = require('mongoose');
 
-// In-memory data store for SCANNER entity
-const scanners = new Map();
-
-class ScannerModel {
-  static create({ deviceId, serialNumber, name, currentVersion = 'v1.0.0', status = 'ACTIVE' }) {
-    const id = uuidv4();
-    const scanner = {
-      id,
-      deviceId: deviceId || `SCN-${Date.now().toString().slice(-4)}`,
-      serialNumber: serialNumber || `SN-${uuidv4().slice(0, 8).toUpperCase()}`,
-      name: name || `Scanner ${deviceId}`,
-      currentVersion,
-      status, // 'ACTIVE' | 'UPDATING' | 'REVOKED' | 'DECOMMISSIONED'
-      registeredAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    scanners.set(id, scanner);
-    return scanner;
+const scannerSchema = new mongoose.Schema(
+  {
+    deviceId: {
+      type: String,
+      required: true,
+      unique: true,
+      trim: true,
+      index: true,
+    },
+    serialNumber: {
+      type: String,
+      required: true,
+      unique: true,
+      trim: true,
+    },
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    currentVersion: {
+      type: String,
+      default: 'v1.0.0',
+    },
+    status: {
+      type: String,
+      enum: ['ACTIVE', 'UPDATING', 'REVOKED', 'DECOMMISSIONED'],
+      default: 'ACTIVE',
+    },
+    registeredAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  {
+    timestamps: true,
+    toJSON: {
+      transform: (doc, ret) => {
+        ret.id = ret._id ? ret._id.toString() : ret.id;
+        delete ret.__v;
+        return ret;
+      },
+    },
   }
+);
 
-  static findById(id) {
-    return scanners.get(id) || null;
+// Method to seed initial demo scanners
+scannerSchema.statics.seedDefaults = async function () {
+  const count = await this.countDocuments();
+  if (count === 0) {
+    await this.create([
+      {
+        deviceId: 'SCN-101',
+        serialNumber: 'SN-AUTOSCOPE-001',
+        name: 'Laboratory Pathology Scanner A',
+        currentVersion: 'v1.0.0',
+        status: 'ACTIVE',
+      },
+      {
+        deviceId: 'SCN-102',
+        serialNumber: 'SN-AUTOSCOPE-002',
+        name: 'Histology High-Res Scanner B',
+        currentVersion: 'v1.0.0',
+        status: 'ACTIVE',
+      },
+    ]);
+    console.log('[Seed] Default scanners SCN-101 and SCN-102 seeded into MongoDB');
   }
+};
 
-  static findByDeviceId(deviceId) {
-    for (const scanner of scanners.values()) {
-      if (scanner.deviceId === deviceId) return scanner;
-    }
-    return null;
-  }
-
-  static findAll() {
-    return Array.from(scanners.values());
-  }
-
-  static updateStatus(id, status) {
-    const scanner = scanners.get(id);
-    if (!scanner) return null;
-    scanner.status = status;
-    scanner.updatedAt = new Date().toISOString();
-    return scanner;
-  }
-
-  static updateVersion(id, currentVersion) {
-    const scanner = scanners.get(id);
-    if (!scanner) return null;
-    scanner.currentVersion = currentVersion;
-    scanner.updatedAt = new Date().toISOString();
-    return scanner;
-  }
-}
-
-// Seed default scanners for demo
-ScannerModel.create({
-  deviceId: 'SCN-101',
-  serialNumber: 'SN-AUTOSCOPE-001',
-  name: 'Laboratory Pathology Scanner A',
-  currentVersion: 'v1.0.0',
-  status: 'ACTIVE',
-});
-
-ScannerModel.create({
-  deviceId: 'SCN-102',
-  serialNumber: 'SN-AUTOSCOPE-002',
-  name: 'Histology High-Res Scanner B',
-  currentVersion: 'v1.0.0',
-  status: 'ACTIVE',
-});
+const ScannerModel = mongoose.model('Scanner', scannerSchema);
 
 module.exports = ScannerModel;

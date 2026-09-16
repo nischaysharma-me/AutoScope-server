@@ -1,50 +1,59 @@
-const { v4: uuidv4 } = require('uuid');
+const mongoose = require('mongoose');
 
-// In-memory data store for PROCESSED_IMAGE_METADATA & THUMBNAIL_METADATA entities
-const artifacts = new Map();
-
-class ImageArtifactModel {
-  static create({
-    imageUploadId,
-    artifactType, // 'PROCESSED_IMAGE' | 'THUMBNAIL'
-    storageKey,
-    s3Bucket = 'autoscope-assets',
-    width = 0,
-    height = 0,
-    fileSize = 0,
-    format = 'image/jpeg',
-    processingTimeMs = 0,
-  }) {
-    const id = uuidv4();
-    const artifact = {
-      id,
-      imageUploadId,
-      artifactType,
-      storageKey,
-      s3Bucket,
-      width: Number(width),
-      height: Number(height),
-      fileSize: Number(fileSize),
-      format,
-      processingTimeMs: Number(processingTimeMs),
-      createdAt: new Date().toISOString(),
-    };
-    artifacts.set(id, artifact);
-    return artifact;
+const imageArtifactSchema = new mongoose.Schema(
+  {
+    imageUploadId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'ImageUpload',
+      required: true,
+      index: true,
+    },
+    artifactType: {
+      type: String,
+      enum: ['PROCESSED_IMAGE', 'THUMBNAIL'],
+      required: true,
+    },
+    storageKey: {
+      type: String,
+      required: true,
+    },
+    s3Bucket: {
+      type: String,
+      default: 'autoscope-images',
+    },
+    width: {
+      type: Number,
+      default: 0,
+    },
+    height: {
+      type: Number,
+      default: 0,
+    },
+    fileSize: {
+      type: Number,
+      default: 0,
+    },
+    format: {
+      type: String,
+      default: 'image/jpeg',
+    },
+    processingTimeMs: {
+      type: Number,
+      default: 0,
+    },
+  },
+  {
+    timestamps: true,
+    toJSON: {
+      transform: (doc, ret) => {
+        ret.id = ret._id ? ret._id.toString() : ret.id;
+        delete ret.__v;
+        return ret;
+      },
+    },
   }
+);
 
-  static findById(id) {
-    return artifacts.get(id) || null;
-  }
-
-  static findByUploadId(imageUploadId) {
-    return Array.from(artifacts.values())
-      .filter(a => a.imageUploadId === imageUploadId);
-  }
-
-  static findAll() {
-    return Array.from(artifacts.values());
-  }
-}
+const ImageArtifactModel = mongoose.model('ImageArtifact', imageArtifactSchema);
 
 module.exports = ImageArtifactModel;

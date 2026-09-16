@@ -2,19 +2,19 @@ const { ImageArtifactModel } = require('../models');
 const { successResponse, errorResponse } = require('../utilites/response.util');
 
 class ArtifactController {
-  getAllArtifacts(req, res, next) {
+  async getAllArtifacts(req, res, next) {
     try {
-      const artifacts = ImageArtifactModel.findAll();
+      const artifacts = await ImageArtifactModel.find().populate('imageUploadId').sort({ createdAt: -1 });
       return successResponse(res, artifacts, 'Artifacts retrieved successfully');
     } catch (error) {
       next(error);
     }
   }
 
-  getArtifactById(req, res, next) {
+  async getArtifactById(req, res, next) {
     try {
       const { id } = req.params;
-      const artifact = ImageArtifactModel.findById(id);
+      const artifact = await ImageArtifactModel.findById(id);
       if (!artifact) {
         return errorResponse(res, `Artifact '${id}' not found`, 404);
       }
@@ -24,10 +24,10 @@ class ArtifactController {
     }
   }
 
-  getArtifactsByUploadId(req, res, next) {
+  async getArtifactsByUploadId(req, res, next) {
     try {
       const { uploadId } = req.params;
-      const artifacts = ImageArtifactModel.findByUploadId(uploadId);
+      const artifacts = await ImageArtifactModel.find({ imageUploadId: uploadId });
       return successResponse(res, artifacts, `Artifacts for upload '${uploadId}' retrieved`);
     } catch (error) {
       next(error);

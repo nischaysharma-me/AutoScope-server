@@ -5,7 +5,7 @@ const { successResponse, errorResponse } = require('../utilites/response.util');
 
 class UploadController {
   // POST /api/uploads/init
-  initUpload(req, res, next) {
+  async initUpload(req, res, next) {
     try {
       const { originalFilename, totalFileSize, totalChunks, scannerId } = req.body;
 
@@ -13,7 +13,7 @@ class UploadController {
         return errorResponse(res, 'Missing required fields: originalFilename, totalChunks', 400);
       }
 
-      const session = chunkUploadService.initSession({
+      const session = await chunkUploadService.initSession({
         originalFilename,
         totalFileSize,
         totalChunks: parseInt(totalChunks, 10),
@@ -27,10 +27,10 @@ class UploadController {
   }
 
   // GET /api/uploads/:id/status
-  getUploadStatus(req, res, next) {
+  async getUploadStatus(req, res, next) {
     try {
       const { id } = req.params;
-      const session = chunkUploadService.getSessionStatus(id);
+      const session = await chunkUploadService.getSessionStatus(id);
       return successResponse(res, session, 'Upload session status retrieved');
     } catch (error) {
       next(error);
@@ -38,9 +38,9 @@ class UploadController {
   }
 
   // GET /api/uploads
-  getAllUploads(req, res, next) {
+  async getAllUploads(req, res, next) {
     try {
-      const uploads = chunkUploadService.getAllSessions();
+      const uploads = await chunkUploadService.getAllSessions();
       return successResponse(res, uploads, 'All upload sessions retrieved');
     } catch (error) {
       next(error);
@@ -86,10 +86,10 @@ class UploadController {
   }
 
   // GET /api/uploads/:id/file
-  downloadCompletedFile(req, res, next) {
+  async downloadCompletedFile(req, res, next) {
     try {
       const { id } = req.params;
-      const session = chunkUploadService.getSessionStatus(id);
+      const session = await chunkUploadService.getSessionStatus(id);
 
       if (session.uploadStatus !== 'COMPLETED' || !session.completedFilePath) {
         return errorResponse(res, 'File is not yet fully uploaded or merged', 400);

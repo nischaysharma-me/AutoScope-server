@@ -2,6 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const config = require('./configs/app.config');
+const { connectDB } = require('./configs/db.config');
+const { ScannerModel } = require('./models');
 const apiRoutes = require('./routes');
 const { notFoundHandler, globalErrorHandler } = require('./middlewares/errorHandler.middleware');
 
@@ -42,10 +44,25 @@ app.get('/api', (req, res) => {
 app.use(notFoundHandler);
 app.use(globalErrorHandler);
 
-if (process.env.NODE_ENV !== 'test') {
-  app.listen(config.PORT, () => {
-    console.log(`AutoScope Server running on http://localhost:${config.PORT}`);
-  });
-}
+const startServer = async () => {
+  try {
+    // Connect to MongoDB
+    await connectDB();
+
+    // Seed default scanners if needed
+    await ScannerModel.seedDefaults();
+
+    if (process.env.NODE_ENV !== 'test') {
+      app.listen(config.PORT, () => {
+        console.log(`AutoScope Server running on http://localhost:${config.PORT}`);
+      });
+    }
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
+};
+
+startServer();
 
 module.exports = app;

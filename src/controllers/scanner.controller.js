@@ -2,19 +2,26 @@ const { ScannerModel } = require('../models');
 const { successResponse, errorResponse } = require('../utilites/response.util');
 
 class ScannerController {
-  getAllScanners(req, res, next) {
+  async getAllScanners(req, res, next) {
     try {
-      const scanners = ScannerModel.findAll();
+      const scanners = await ScannerModel.find().sort({ createdAt: -1 });
       return successResponse(res, scanners, 'Scanners retrieved successfully');
     } catch (error) {
       next(error);
     }
   }
 
-  getScannerById(req, res, next) {
+  async getScannerById(req, res, next) {
     try {
       const { id } = req.params;
-      const scanner = ScannerModel.findById(id) || ScannerModel.findByDeviceId(id);
+      let scanner = null;
+      if (id.match(/^[0-9a-fA-F]{24}$/)) {
+        scanner = await ScannerModel.findById(id);
+      }
+      if (!scanner) {
+        scanner = await ScannerModel.findOne({ deviceId: id });
+      }
+
       if (!scanner) {
         return errorResponse(res, `Scanner '${id}' not found`, 404);
       }
@@ -24,14 +31,14 @@ class ScannerController {
     }
   }
 
-  registerScanner(req, res, next) {
+  async registerScanner(req, res, next) {
     try {
       const { deviceId, serialNumber, name, currentVersion } = req.body;
-      const scanner = ScannerModel.create({
-        deviceId,
-        serialNumber,
-        name,
-        currentVersion,
+      const scanner = await ScannerModel.create({
+        deviceId: deviceId || `SCN-${Date.now().toString().slice(-4)}`,
+        serialNumber: serialNumber || `SN-${Date.now()}`,
+        name: name || `Scanner ${deviceId}`,
+        currentVersion: currentVersion || 'v1.0.0',
       });
       return successResponse(res, scanner, 'Scanner registered successfully', 201);
     } catch (error) {
