@@ -15,15 +15,20 @@ app.use(express.urlencoded({ extended: true }));
 // Serve completed files statically under /files
 app.use('/files', express.static(config.COMPLETED_DIR));
 
+// Serve frontend static files from public
+app.use(express.static(path.join(__dirname, '../public')));
+
 // API Routes
 app.use('/api', apiRoutes);
 
-// Root route
-app.get('/', (req, res) => {
+// API documentation route
+app.get('/api', (req, res) => {
   res.json({
     message: 'AutoScope Server API',
     endpoints: {
       health: 'GET /api/health',
+      scanners: 'GET /api/scanners',
+      artifacts: 'GET /api/artifacts',
       initUpload: 'POST /api/uploads/init',
       listUploads: 'GET /api/uploads',
       getUploadStatus: 'GET /api/uploads/:id/status',
