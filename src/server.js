@@ -9,6 +9,8 @@ const { notFoundHandler, globalErrorHandler } = require('./middlewares/errorHand
 
 const app = express();
 
+const docsRoutes = require('./routes/docs.routes');
+
 // Middlewares
 app.use(cors());
 app.use(express.json());
@@ -19,6 +21,9 @@ app.use('/files', express.static(config.COMPLETED_DIR));
 
 // Serve frontend static files from public
 app.use(express.static(path.join(__dirname, '../public')));
+
+// Host Documentation Portal with marked and mermaid
+app.use('/docs', docsRoutes);
 
 // API Routes
 app.use('/api', apiRoutes);
