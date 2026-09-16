@@ -96,6 +96,18 @@ class StorageProvider {
       return `https://${AWS_S3_BUCKET_NAME}.s3.${AWS_REGION}.amazonaws.com/${s3Key}`;
     }
   }
+
+  /**
+   * Fetches an object stream directly from S3 bucket
+   * @param {string} s3Key - S3 Object Key
+   */
+  async getObjectStreamFromS3(s3Key) {
+    const command = new GetObjectCommand({
+      Bucket: AWS_S3_BUCKET_NAME,
+      Key: s3Key,
+    });
+    return await s3Client.send(command);
+  }
 }
 
 module.exports = new StorageProvider();

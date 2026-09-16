@@ -140,9 +140,9 @@ class ChunkUploadService {
 
       writeStream.on('finish', async () => {
         try {
-          // Clean up chunks directory
+          // Preserve chunks in uploads/chunks/<uploadId>/ for audit, inspection, and verification
           const chunkDir = storageProvider.getChunkDirPath(uploadId);
-          removeDir(chunkDir);
+          console.log(`[Chunk Storage] Retaining all ${session.totalChunks} chunks on disk at: ${chunkDir}`);
 
           const stats = fs.statSync(targetFilePath);
 

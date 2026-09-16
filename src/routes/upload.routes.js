@@ -9,5 +9,7 @@ router.get('/', uploadController.getAllUploads);
 router.get('/:id/status', uploadController.getUploadStatus);
 router.post('/:id/chunk', uploadChunkMiddleware, uploadController.uploadChunk);
 router.get('/:id/file', uploadController.downloadCompletedFile);
+router.get('/:id/chunks', uploadController.getUploadChunks);
+router.get('/:id/chunks/:chunkIndex', uploadController.downloadChunk);
 
 module.exports = router;
