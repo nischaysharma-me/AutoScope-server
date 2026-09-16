@@ -152,15 +152,27 @@ class ChunkUploadService {
           session.completedFilePath = targetFilePath;
           await session.save();
 
-          // Generate and persist Artifacts in MongoDB (PROCESSED_IMAGE & THUMBNAIL)
+          // Determine MIME type
           const ext = path.extname(session.originalFilename).toLowerCase();
           const mimeType = ext === '.png' ? 'image/png' : (ext === '.webp' ? 'image/webp' : 'image/jpeg');
+
+          // S3 Object Keys
+          const s3ImageKey = `scans/${uploadId}/${path.basename(targetFilePath)}`;
+          const s3ThumbKey = `thumbnails/${uploadId}/thumb_${path.basename(targetFilePath)}`;
+
+          // Upload assembled full image to S3 bucket
+          const s3ImageResult = await storageProvider.uploadToS3(targetFilePath, s3ImageKey, mimeType);
+
+          // Create and upload thumbnail to S3
+          const thumbFilePath = `${targetFilePath}_thumb`;
+          fs.copyFileSync(targetFilePath, thumbFilePath);
+          const s3ThumbResult = await storageProvider.uploadToS3(thumbFilePath, s3ThumbKey, mimeType);
 
           const processedArtifact = await ImageArtifactModel.create({
             imageUploadId: session._id,
             artifactType: 'PROCESSED_IMAGE',
-            storageKey: targetFilePath,
-            s3Bucket: 'autoscope-images',
+            storageKey: s3ImageResult.key,
+            s3Bucket: s3ImageResult.bucket,
             width: 3840,
             height: 2160,
             fileSize: stats.size,
@@ -171,8 +183,8 @@ class ChunkUploadService {
           const thumbnailArtifact = await ImageArtifactModel.create({
             imageUploadId: session._id,
             artifactType: 'THUMBNAIL',
-            storageKey: `${targetFilePath}_thumb`,
-            s3Bucket: 'autoscope-images',
+            storageKey: s3ThumbResult.key,
+            s3Bucket: s3ThumbResult.bucket,
             width: 320,
             height: 180,
             fileSize: Math.round(stats.size * 0.1),
@@ -184,6 +196,7 @@ class ChunkUploadService {
             filePath: targetFilePath,
             fileName: path.basename(targetFilePath),
             fileSize: stats.size,
+            s3Location: s3ImageResult.location,
             artifacts: [processedArtifact, thumbnailArtifact],
           });
         } catch (err) {
