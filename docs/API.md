@@ -145,6 +145,62 @@ Downloads any specific chunk binary directly from disk.
 
 ---
 
+### 1.7 Query BullMQ Asynchronous Job Status
+Checks the live processing state of a BullMQ worker job for a given upload session.
+
+- **URL**: `GET /api/uploads/:id/job`
+- **Response**:
+  ```json
+  {
+    "success": true,
+    "message": "Job status retrieved",
+    "data": {
+      "uploadId": "6aab81aac08203974bd0c4be",
+      "bullmqJobId": "job-6aab81aac08203974bd0c4be",
+      "processingStatus": "COMPLETED",
+      "job": {
+        "id": "job-6aab81aac08203974bd0c4be",
+        "name": "process-specimen-scan",
+        "state": "completed",
+        "progress": 100,
+        "failedReason": null,
+        "returnvalue": {
+          "fileName": "bullmq_specimen_scan.jpg",
+          "fileSize": 1995322,
+          "s3Location": "https://vectorstoretj.s3.ap-south-1.amazonaws.com/scans/..."
+        }
+      },
+      "artifacts": [...]
+    }
+  }
+  ```
+
+---
+
+### 1.8 BullMQ Queue Health & Scale Metrics
+Returns the job distribution across queue lifecycle stages (`waiting`, `active`, `completed`, `failed`, `delayed`).
+
+- **URL**: `GET /api/uploads/queue/metrics`
+- **Response**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "queueName": "image-processing",
+      "status": "UP",
+      "counts": {
+        "waiting": 0,
+        "active": 0,
+        "completed": 12,
+        "failed": 0,
+        "delayed": 0
+      }
+    }
+  }
+  ```
+
+---
+
 ## 2. Scanners Fleet
 
 ### 2.1 List Scanners

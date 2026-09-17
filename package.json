@@ -8,6 +8,7 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "seed": "node src/tools/seedScanners.js",
+    "worker": "node src/workers/image.worker.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
@@ -22,9 +23,11 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1133.0",
     "@aws-sdk/s3-request-presigner": "^3.1133.0",
+    "bullmq": "^6.3.6",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
+    "ioredis": "^6.0.0",
     "marked": "^18.0.13",
     "mongoose": "^9.10.1",
     "multer": "^1.4.5-lts.1",

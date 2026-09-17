@@ -3,6 +3,7 @@ const path = require('path');
 const storageProvider = require('../providers/storage.provider');
 const { ImageUploadModel, ImageChunkModel, ImageArtifactModel, ScannerModel } = require('../models');
 const { removeDir } = require('../utilites/file.util');
+const queueService = require('./queue.service');
 
 class ChunkUploadService {
   async initSession({ originalFilename, totalFileSize, totalChunks, scannerId = null }) {
@@ -91,10 +92,23 @@ class ChunkUploadService {
     // Check count of uploaded chunks in MongoDB
     const uploadedChunksCount = await ImageChunkModel.countDocuments({ imageUploadId: session._id });
     const isComplete = uploadedChunksCount === session.totalChunks;
-    let completedFile = null;
+    let queued = false;
+    let jobId = null;
 
     if (isComplete) {
-      completedFile = await this.mergeChunks(uploadId);
+      session.uploadStatus = 'COMPLETED';
+      session.processingStatus = 'QUEUED';
+      
+      const job = await queueService.enqueueImageProcessing(uploadId, {
+        originalFilename: session.originalFilename,
+        totalFileSize: session.totalFileSize,
+        totalChunks: session.totalChunks,
+      });
+
+      session.bullmqJobId = job.id;
+      await session.save();
+      queued = true;
+      jobId = job.id;
     }
 
     const latestSession = await ImageUploadModel.findById(uploadId);
@@ -103,7 +117,8 @@ class ChunkUploadService {
     return {
       session: formattedSession,
       isComplete,
-      completedFile,
+      queued,
+      jobId,
     };
   }
 
@@ -228,6 +243,7 @@ class ChunkUploadService {
       uploadedChunksCount: chunks.length,
       uploadedChunkIndices: chunks.map(c => c.chunkIndex),
       uploadStatus: uploadDoc.uploadStatus,
+      bullmqJobId: uploadDoc.bullmqJobId,
       processingStatus: uploadDoc.processingStatus,
       completedFilePath: uploadDoc.completedFilePath,
       artifacts: artifacts.map(a => a.toJSON()),

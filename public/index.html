@@ -480,9 +480,9 @@
         updateOverallProgress();
 
         if (data.data.isComplete) {
-          log('[Assembled] Server merged chunks and generated image artifacts!', 'success');
-          displayArtifacts(data.data.session.artifacts, data.data.completedFile);
-          finishUpload();
+          log(`[BullMQ Producer] Enqueued Job ID: ${data.data.jobId || 'job-' + currentUploadId} (Status: QUEUED)`, 'success');
+          artifactStatus.textContent = 'BullMQ: Queued';
+          pollJobStatus(currentUploadId);
         } else {
           // Upload next chunk
           uploadNextChunk(index + 1);
@@ -519,6 +519,38 @@
         log('Failed to fetch status for resume: ' + err.message, 'error');
       }
     });
+
+    async function pollJobStatus(uploadId) {
+      artifactStatus.textContent = 'Worker Processing...';
+      const pollInterval = setInterval(async () => {
+        try {
+          const res = await fetch(`/api/uploads/${uploadId}/job`);
+          const json = await res.json();
+          if (json.success && json.data) {
+            const { job, processingStatus, artifacts } = json.data;
+            if (job) {
+              const progress = job.progress || 0;
+              log(`[BullMQ Worker] Job ${job.id} state: ${job.state.toUpperCase()} (${progress}%)`);
+              artifactStatus.textContent = `Worker: ${job.state.toUpperCase()} (${progress}%)`;
+
+              if (job.state === 'completed' || processingStatus === 'COMPLETED') {
+                clearInterval(pollInterval);
+                log('[BullMQ Worker] Job completed! All artifacts generated & synced to S3.', 'success');
+                displayArtifacts(artifacts, job.returnvalue);
+                finishUpload();
+              } else if (job.state === 'failed' || processingStatus === 'FAILED') {
+                clearInterval(pollInterval);
+                log(`[BullMQ Worker] Job failed: ${job.failedReason || 'Unknown error'}`, 'error');
+                artifactStatus.textContent = 'Failed';
+                finishUpload();
+              }
+            }
+          }
+        } catch (err) {
+          console.error('Job polling error:', err);
+        }
+      }, 700);
+    }
 
     function finishUpload() {
       resetControlsAfterUpload();

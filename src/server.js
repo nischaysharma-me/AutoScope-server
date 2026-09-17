@@ -4,6 +4,7 @@ const path = require('path');
 const config = require('./configs/app.config');
 const { connectDB } = require('./configs/db.config');
 const { ScannerModel } = require('./models');
+const { startWorker } = require('./workers/image.worker');
 const apiRoutes = require('./routes');
 const { notFoundHandler, globalErrorHandler } = require('./middlewares/errorHandler.middleware');
 
@@ -56,6 +57,9 @@ const startServer = async () => {
 
     // Seed default scanners if needed
     await ScannerModel.seedDefaults();
+
+    // Start BullMQ Image Processing Worker
+    startWorker();
 
     if (process.env.NODE_ENV !== 'test') {
       app.listen(config.PORT, () => {

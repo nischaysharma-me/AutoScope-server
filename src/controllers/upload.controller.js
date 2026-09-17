@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const chunkUploadService = require('../services/chunkUpload.service');
 const storageProvider = require('../providers/storage.provider');
+const queueService = require('../services/queue.service');
 const { successResponse, errorResponse } = require('../utilites/response.util');
 
 class UploadController {
@@ -65,21 +66,16 @@ class UploadController {
       const result = await chunkUploadService.saveChunk(id, chunkIndex, req.file);
 
       const message = result.isComplete
-        ? 'Final chunk uploaded and file merged successfully'
+        ? `Final chunk received. Asynchronous image processing job enqueued in BullMQ (Job ID: ${result.jobId})`
         : `Chunk ${chunkIndex} uploaded successfully`;
 
       return successResponse(res, {
         uploadId: id,
         chunkIndex: Number(chunkIndex),
         isComplete: result.isComplete,
+        queued: result.queued || false,
+        jobId: result.jobId || null,
         session: result.session,
-        ...(result.completedFile && {
-          completedFile: {
-            fileName: result.completedFile.fileName,
-            fileSize: result.completedFile.fileSize,
-            downloadUrl: `/api/uploads/${id}/file`,
-          },
-        }),
       }, message);
     } catch (error) {
       next(error);
@@ -170,6 +166,39 @@ class UploadController {
       res.setHeader('Content-Type', 'application/octet-stream');
       res.setHeader('Content-Disposition', `attachment; filename="chunk_${chunkIndex}.bin"`);
       return res.sendFile(chunkPath);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/uploads/:id/job
+  async getJobStatus(req, res, next) {
+    try {
+      const { id } = req.params;
+      const session = await chunkUploadService.getSessionStatus(id);
+
+      if (!session.bullmqJobId) {
+        return errorResponse(res, `No BullMQ job found for upload '${id}'`, 404);
+      }
+
+      const jobStatus = await queueService.getJobStatus(session.bullmqJobId);
+      return successResponse(res, {
+        uploadId: id,
+        bullmqJobId: session.bullmqJobId,
+        processingStatus: session.processingStatus,
+        job: jobStatus,
+        artifacts: session.artifacts,
+      }, 'Job status retrieved');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/uploads/queue/metrics
+  async getQueueMetrics(req, res, next) {
+    try {
+      const metrics = await queueService.getQueueMetrics();
+      return successResponse(res, metrics, 'BullMQ queue metrics retrieved');
     } catch (error) {
       next(error);
     }
